@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Snake — built from one prompt</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #050510; overflow: hidden; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: "Segoe UI", Arial, sans-serif; color: #e8e8ff;
+    background: radial-gradient(ellipse at 50% 40%, #14143a 0%, #050510 70%);
+  }
+  h1 {
+    font-size: 44px; letter-spacing: 6px; margin-bottom: 6px;
+    color: #39ff14; text-shadow: 0 0 12px #39ff14, 0 0 42px #39ff14;
+  }
+  .sub { font-size: 15px; letter-spacing: 3px; color: #8f8fd0; margin-bottom: 18px; text-transform: uppercase; }
+  #hud {
+    width: 900px; display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px; font-size: 24px; font-weight: 700;
+  }
+  #score { color: #39ff14; text-shadow: 0 0 10px #39ff14; }
+  #level { color: #ffe14d; text-shadow: 0 0 10px #ffe14d; }
+  #best { color: #ff2e88; text-shadow: 0 0 10px #ff2e88; }
+  #best span, #score span, #level span { color: #e8e8ff; text-shadow: none; font-weight: 400; font-size: 18px; }
+  #wrap { position: relative; width: 900px; height: 600px; }
+  canvas {
+    display: block; width: 900px; height: 600px; background: #0a0a1e;
+    border: 2px solid #2b2b5e; border-radius: 12px;
+    box-shadow: 0 0 24px rgba(57, 255, 20, 0.25), 0 0 60px rgba(255, 46, 136, 0.12);
+  }
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: rgba(5, 5, 16, 0.82); border-radius: 12px; z-index: 2;
+  }
+  #overlay h2 { font-size: 52px; letter-spacing: 4px; color: #ff2e88; text-shadow: 0 0 16px #ff2e88, 0 0 50px #ff2e88; }
+  #overlay p { font-size: 22px; color: #e8e8ff; margin-top: 14px; line-height: 1.6; }
+  #overlay .keys { font-size: 17px; color: #8f8fd0; margin-top: 8px; }
+  #overlay .final { font-size: 30px; color: #39ff14; text-shadow: 0 0 12px #39ff14; margin-top: 10px; }
+  .hidden { display: none !important; }
+  #hint { margin-top: 14px; font-size: 15px; color: #6d6da8; letter-spacing: 2px; }
+</style>
+</head>
+<body>
+  <h1>NEON SNAKE</h1>
+  <div class="sub">built from one prompt by an AI agent</div>
+  <div id="hud">
+    <div id="score">SCORE <span id="scoreVal">0</span></div>
+    <div id="level">LEVEL <span id="levelVal">1</span></div>
+    <div id="best">BEST <span id="bestVal">0</span></div>
+  </div>
+  <div id="wrap">
+    <canvas id="game" width="900" height="600"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">NEON SNAKE</h2>
+      <p id="ovText">Eat the pink dots. Don't hit the walls<br>or your own tail.</p>
+      <p class="keys">ARROW KEYS or WASD to move &nbsp;·&nbsp; P to pause</p>
+      <p class="final hidden" id="ovFinal"></p>
+      <p class="keys" id="ovHint">Press ENTER to start</p>
+    </div>
+  </div>
+  <div id="hint">ONE PROMPT · ONE GAME · MADE ON MAKE.FUN</div>
+<script>
+(function () {
+  var canvas = document.getElementById('game');
+  var ctx = canvas.getContext('2d');
+  var scoreEl = document.getElementById('scoreVal');
+  var levelEl = document.getElementById('levelVal');
+  var bestEl = document.getElementById('bestVal');
+  var overlay = document.getElementById('overlay');
+  var ovTitle = document.getElementById('ovTitle');
+  var ovText = document.getElementById('ovText');
+  var ovFinal = document.getElementById('ovFinal');
+  var ovHint = document.getElementById('ovHint');
+
+  var CELL = 30, COLS = 30, ROWS = 20;
+  var snake, dir, nextDir, food, score, best, timer, speed, running, paused, dead;
+
+  try { best = parseInt(localStorage.getItem('neonSnakeBest') || '0', 10) || 0; }
+  catch (e) { best = 0; }
+  bestEl.textContent = best;
+
+  function reset() {
+    snake = [{ x: 14, y: 10 }, { x: 13, y: 10 }, { x: 12, y: 10 }];
+    dir = { x: 1, y: 0 };
+    nextDir = dir;
+    score = 0;
+    speed = 150;
+    dead = false;
+    paused = false;
+    placeFood();
+    updateHud();
+  }
+
+  function placeFood() {
+    while (true) {
+      food = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+      var clash = false;
+      for (var i = 0; i < snake.length; i++) {
+        if (snake[i].x === food.x && snake[i].y === food.y) { clash = true; break; }
+      }
+      if (!clash) return;
+    }
+  }
+
+  function updateHud() {
+    scoreEl.textContent = score;
+    levelEl.textContent = 1 + Math.floor(score / 50);
+    bestEl.textContent = best;
+  }
+
+  function step() {
+    if (!running || paused || dead) return;
+    dir = nextDir;
+    var head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+    if (head.x < 0 || head.y < 0 || head.x >= COLS || head.y >= ROWS) return gameOver();
+    for (var i = 0; i < snake.length; i++) {
+      if (snake[i].x === head.x && snake[i].y === head.y) return gameOver();
+    }
+    snake.unshift(head);
+    if (head.x === food.x && head.y === food.y) {
+      score += 10;
+      if (score > best) {
+        best = score;
+        try { localStorage.setItem('neonSnakeBest', String(best)); } catch (e) {}
+      }
+      speed = Math.max(70, 150 - Math.floor(score / 50) * 8);
+      clearInterval(timer);
+      timer = setInterval(step, speed);
+      placeFood();
+    } else {
+      snake.pop();
+    }
+    updateHud();
+    draw();
+  }
+
+  function draw() {
+    ctx.fillStyle = '#0a0a1e';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = 'rgba(80, 80, 160, 0.18)';
+    ctx.lineWidth = 1;
+    for (var gx = 1; gx < COLS; gx++) {
+      ctx.beginPath(); ctx.moveTo(gx * CELL, 0); ctx.lineTo(gx * CELL, canvas.height); ctx.stroke();
+    }
+    for (var gy = 1; gy < ROWS; gy++) {
+      ctx.beginPath(); ctx.moveTo(0, gy * CELL); ctx.lineTo(canvas.width, gy * CELL); ctx.stroke();
+    }
+    var pulse = 6 + Math.sin(Date.now() / 180) * 2;
+    ctx.save();
+    ctx.shadowColor = '#ff2e88';
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = '#ff2e88';
+    ctx.beginPath();
+    ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, pulse + 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    for (var i = snake.length - 1; i >= 0; i--) {
+      var s = snake[i];
+      var t = i / Math.max(1, snake.length - 1);
+      var green = Math.round(255 - t * 140);
+      ctx.save();
+      ctx.shadowColor = '#39ff14';
+      ctx.shadowBlur = i === 0 ? 20 : 10;
+      ctx.fillStyle = 'rgb(57, ' + green + ', 20)';
+      roundRect(s.x * CELL + 2, s.y * CELL + 2, CELL - 4, CELL - 4, 7);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (snake.length > 0) {
+      ctx.fillStyle = '#050510';
+      var hx = snake[0].x * CELL + CELL / 2, hy = snake[0].y * CELL + CELL / 2;
+      ctx.beginPath(); ctx.arc(hx - 6, hy - 4, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(hx + 6, hy - 4, 3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function showOverlay(title, text, finalText, hint) {
+    ovTitle.textContent = title;
+    ovText.innerHTML = text;
+    if (finalText) { ovFinal.textContent = finalText; ovFinal.classList.remove('hidden'); }
+    else { ovFinal.classList.add('hidden'); }
+    ovHint.textContent = hint;
+    overlay.classList.remove('hidden');
+  }
+
+  function hideOverlay() { overlay.classList.add('hidden'); }
+
+  function start() {
+    reset();
+    running = true;
+    hideOverlay();
+    clearInterval(timer);
+    timer = setInterval(step, speed);
+    draw();
+  }
+
+  function gameOver() {
+    dead = true;
+    running = false;
+    clearInterval(timer);
+    draw();
+    showOverlay('GAME OVER', 'The snake crashed.', 'FINAL SCORE: ' + score, 'Press ENTER to play again');
+  }
+
+  var KEYS = {
+    ArrowUp: { x: 0, y: -1 }, KeyW: { x: 0, y: -1 },
+    ArrowDown: { x: 0, y: 1 }, KeyS: { x: 0, y: 1 },
+    ArrowLeft: { x: -1, y: 0 }, KeyA: { x: -1, y: 0 },
+    ArrowRight: { x: 1, y: 0 }, KeyD: { x: 1, y: 0 }
+  };
+
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'Enter') {
+      if (!running || dead) { start(); }
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'KeyP' && running && !dead) {
+      paused = !paused;
+      if (paused) showOverlay('PAUSED', 'Take a breath.', '', 'Press P to resume');
+      else hideOverlay();
+      return;
+    }
+    var k = KEYS[e.code];
+    if (k) {
+      if (k.x !== -dir.x || k.y !== -dir.y) nextDir = k;
+      e.preventDefault();
+    }
+  });
+
+  canvas.addEventListener('click', function () {
+    if (!running || dead) start();
+  });
+
+  // Read-only handle for automated playtesting (does not change gameplay).
+  window.__neonSnake = {
+    state: function () {
+      return {
+        score: score, best: best, dead: dead, paused: paused, running: running,
+        head: snake[0], food: food, len: snake.length,
+        dir: { x: dir.x, y: dir.y },
+        body: snake.map(function (p) { return { x: p.x, y: p.y }; })
+      };
+    }
+  };
+
+  reset();
+  draw();
+  showOverlay('NEON SNAKE', 'Eat the pink dots. Don\'t hit the walls<br>or your own tail.', '', 'Press ENTER to start');
+})();
+</script>
+</body>
+</html>
